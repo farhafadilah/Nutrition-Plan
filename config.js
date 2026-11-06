@@ -1,0 +1,3 @@
+const CONFIG = {
+    SPOONACULAR_KEY: '28542f149f9d4fca92df51ee03f28340'
+};

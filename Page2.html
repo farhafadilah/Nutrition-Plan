@@ -1,0 +1,197 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Food Intake Tracker - CRUD</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #fcfbfa;
+            color: #3b302a;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        h2, h3 {
+            color: #5c4033;
+        }
+
+        button {
+            background-color: #8c6d62;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #6d5248;
+        }
+
+        input {
+            padding: 9px;
+            border: 1px solid #d7ccc8;
+            border-radius: 6px;
+            font-size: 14px;
+            background-color: #ffffff;
+            color: #3b302a;
+            outline: none;
+            margin-right: 5px;
+            margin-bottom: 10px;
+        }
+
+        input:focus {
+            border-color: #8c6d62;
+        }
+
+        .card {
+            background: #ffffff;
+            border: 1px solid #eae0db;
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+        }
+
+        .summary-box {
+            background: #f7f3f0;
+            border: 1px solid #e6dcd6;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        hr {
+            border: none;
+            height: 1px;
+            background-color: #eae0db;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>My Daily Food Intake Tracker</h2>
+    <button onclick="window.location.href='index.html'">Back to Search (Page 1)</button>
+    <hr>
+
+    <form id="food-form">
+        <input type="hidden" id="food-index" value="">
+        <input type="text" id="input-name" placeholder="Food Name" required>
+        <input type="number" id="input-kcal" placeholder="Calories (kcal)" min="0" required>
+        <input type="number" id="input-protein" placeholder="Protein (g)" min="0" required>
+        <button type="submit" id="form-submit-btn">Add Record</button>
+    </form>
+
+    <h3>Saved Records</h3>
+    <div id="crud-display"></div>
+
+    <div class="summary-box">
+        <h3 style="margin-top: 0;">Summary Calculation</h3>
+        <p>Total Calories: <span id="total-calories">0</span> kcal</p>
+        <p>Total Protein: <span id="total-protein">0</span> g</p>
+    </div>
+
+    <script>
+        const foodForm = document.getElementById('food-form');
+        const foodIndexInput = document.getElementById('food-index');
+        const inputName = document.getElementById('input-name');
+        const inputKcal = document.getElementById('input-kcal');
+        const inputProtein = document.getElementById('input-protein');
+        const formSubmitBtn = document.getElementById('form-submit-btn');
+        const crudDisplay = document.getElementById('crud-display');
+
+        const totalCaloriesSpan = document.getElementById('total-calories');
+        const totalProteinSpan = document.getElementById('total-protein');
+
+        let savedIntakes = JSON.parse(localStorage.getItem('foodIntakes')) || [];
+
+        function formatValue(value, unit, decimals = 2) {
+            if (value === null || value === undefined) return 'No data';
+            return value.toFixed(decimals) + ' ' + unit;
+        }
+
+        function saveAndRender() {
+            localStorage.setItem('foodIntakes', JSON.stringify(savedIntakes));
+            renderCRUD();
+        }
+
+        function renderCRUD() {
+            if (savedIntakes.length === 0) {
+                crudDisplay.innerHTML = '<p style="color: #8c7368;">No records saved yet.</p>';
+                totalCaloriesSpan.textContent = '0';
+                totalProteinSpan.textContent = '0';
+                return;
+            }
+
+            let totalKcal = 0;
+            let totalProtein = 0;
+
+            crudDisplay.innerHTML = savedIntakes.map((item, index) => {
+                totalKcal += Number(item.kcal);
+                totalProtein += Number(item.protein);
+
+                return `
+                    <div class="card">
+                        <strong>${item.name}</strong><br>
+                        <span style="color: #6d5248; font-size: 13px;">Calories: ${item.kcal} kcal | Protein: ${item.protein} g</span><br><br>
+                        <button type="button" onclick="editRecord(${index})">Edit</button>
+                        <button type="button" onclick="deleteRecord(${index})" style="background-color: #b08984;">Delete</button>
+                    </div>
+                `;
+            }).join('');
+
+            totalCaloriesSpan.textContent = totalKcal;
+            totalProteinSpan.textContent = formatValue(totalProtein, 'g');
+        }
+
+        foodForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const name = inputName.value.trim();
+            const kcal = parseFloat(inputKcal.value);
+            const protein = parseFloat(inputProtein.value);
+            const editIndex = foodIndexInput.value;
+
+            if (name === '' || isNaN(kcal) || isNaN(protein) || kcal < 0 || protein < 0) {
+                alert('Please enter valid food details.');
+                return;
+            }
+
+            if (editIndex === "") {
+                savedIntakes.push({ name, kcal, protein });
+            } else {
+                savedIntakes[editIndex] = { name, kcal, protein };
+                foodIndexInput.value = "";
+                formSubmitBtn.textContent = "Add Record";
+            }
+
+            foodForm.reset();
+            saveAndRender();
+        });
+
+        window.editRecord = function(index) {
+            const item = savedIntakes[index];
+            inputName.value = item.name;
+            inputKcal.value = item.kcal;
+            inputProtein.value = item.protein;
+            foodIndexInput.value = index;
+            formSubmitBtn.textContent = "Update Record";
+        }
+
+        window.deleteRecord = function(index) {
+            if (confirm("Are you sure you want to delete this record?")) {
+                savedIntakes.splice(index, 1);
+                saveAndRender();
+            }
+        }
+
+        renderCRUD();
+    </script>
+</body>
+</html>

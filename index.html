@@ -1,0 +1,385 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Nutrition Plan - Search</title>
+    <style>
+       body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #fcfbfa;
+            color: #3b302a;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        h1, h2 {
+            color: #5c4033;
+        }
+
+        button {
+            background-color: #8c6d62;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #6d5248;
+        }
+
+        input, select {
+            padding: 10px;
+            border: 1px solid #d7ccc8;
+            border-radius: 6px;
+            font-size: 14px;
+            background-color: #ffffff;
+            color: #3b302a;
+            outline: none;
+        }
+
+        input:focus, select:focus {
+            border-color: #8c6d62;
+        }
+
+        .card {
+            background: #ffffff;
+            border: 1px solid #eae0db;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+        }
+
+        .error { color: #b00020; }
+        .success { color: #2e7d32; }
+
+        hr {
+            border: none;
+            height: 1px;
+            background-color: #eae0db;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body></body>
+
+    <h1>Nutrition Plan</h1>
+    <button onclick="window.location.href='Page2.html'">Food Intake Tracker</button>
+    <hr>
+
+    <div>
+        <input id="search-input" type="text" placeholder="Enter a food name" style="width: 60%;">
+        <button id="search-button">Search</button>
+        <p><small style="color: #8c7368;">Search in English, e.g. chicken, rice, honey chicken.</small></p>
+    </div>
+    <div id="data"></div>
+
+    <hr>
+    <div>
+        <h2>Diet Suggestions</h2>
+        <select id="select-diet">
+            <option value="">Select a diet</option>
+            <option value="high-protein">High Protein</option>
+            <option value="low-carb">Low Carb</option>
+            <option value="low-fat">Low Fat</option>
+            <option value="low-sugar">Low Sugar</option>
+        </select>
+        <button id="suggest-button">Suggest</button>
+    </div>
+
+    <div id="suggestions" style="margin-top: 15px;"></div>
+
+    <script src="config.js"></script>
+    <script>
+        const searchInput = document.getElementById('search-input');
+        const searchButton = document.getElementById('search-button');
+        const dataDisplay = document.getElementById('data');
+
+        const selectDiet = document.getElementById('select-diet');
+        const suggestButton = document.getElementById('suggest-button');
+        const suggestionsDisplay = document.getElementById('suggestions');
+
+        let currentFoods = [];
+
+        let spoonKey = '';
+        if (typeof CONFIG !== 'undefined') {
+            spoonKey = CONFIG.SPOONACULAR_KEY;
+        }
+
+        function formatValue(value, unit, decimals = 2) {
+            if (value === null || value === undefined) {
+                return 'No data';
+            }
+            return value.toFixed(decimals) + ' ' + unit;
+        }
+
+        function toPer100g(value, servingGrams) {
+            if (value === null || servingGrams === null) {
+                return null;
+            }
+            return (value / servingGrams) * 100;
+        }
+
+        function getNutrient(nutrientList, name) {
+            for (let i = 0; i < nutrientList.length; i++) {
+                if (nutrientList[i].name === name) {
+                    return nutrientList[i].amount;
+                }
+            }
+            return null;
+        }
+
+        function suggestFoods(foods, diet) {
+            let selectedList = [];
+
+            for (let i = 0; i < foods.length; i++) {
+                let valid = false;
+
+                if (diet === 'high-protein') {
+                    valid = (foods[i].protein !== null && foods[i].protein >= 15);
+
+                } else if (diet === 'low-carb') {
+                    valid = (foods[i].carbs !== null && foods[i].carbs <= 10);
+
+                } else if (diet === 'low-fat') {
+                    valid = (foods[i].fat !== null && foods[i].fat <= 3);
+
+                } else if (diet === 'low-sugar') {
+                    valid = (foods[i].sugar !== null && foods[i].sugar <= 5);
+                }
+
+                if (valid) {
+                    selectedList.push(foods[i]);
+                }
+            }
+            return selectedList;
+        }
+
+        function getOpenFoodFacts(query, errors) {
+            const url = `https://search.openfoodfacts.org/search?q=${encodeURIComponent(query)}&page_size=5`;
+
+            return fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Open Food Facts failed (' + response.status + ')');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const products = data.hits || [];
+
+                    return products.map(p => {
+                        const n = p.nutriments || {};
+                        return {
+                            name: p.product_name || 'Unknown Product',
+                            kcal: n['energy-kcal_100g'] ? Math.round(n['energy-kcal_100g']) : null,
+                            protein: n.proteins_100g ?? null,
+                            carbs: n.carbohydrates_100g ?? null,
+                            fat: n.fat_100g ?? null,
+                            sugar: n.sugars_100g ?? null,
+                            sodium: n.sodium_100g != null ? n.sodium_100g * 1000 : null,
+                            servingGrams: null,
+                            source: 'Open Food Facts'
+                        };
+                    });
+                })
+                .catch(error => {
+                    errors.push(error.message);
+                    return [];
+                });
+        }
+
+        function getSpoonacular(query, errors) {
+            if (spoonKey === '') {
+                errors.push('Spoonacular key missing (check config.js)');
+                return Promise.resolve([]);
+            }
+
+            const url = `https://api.spoonacular.com/recipes/complexSearch?query=${encodeURIComponent(query)}&number=5&addRecipeNutrition=true&apiKey=${spoonKey}`;
+
+            return fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Spoonacular failed (' + response.status + ')');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const results = data.results || [];
+
+                    return results.map(r => {
+                        const nutrients = r.nutrition.nutrients;
+
+                        let servingGrams = null;
+                        if (r.nutrition.weightPerServing) {
+                            servingGrams = r.nutrition.weightPerServing.amount;
+                        }
+
+                        let kcal = toPer100g(getNutrient(nutrients, 'Calories'), servingGrams);
+                        if (kcal !== null) {
+                            kcal = Math.round(kcal);
+                        }
+
+                        return {
+                            name: r.title,
+                            kcal: kcal,
+                            protein: toPer100g(getNutrient(nutrients, 'Protein'), servingGrams),
+                            carbs: toPer100g(getNutrient(nutrients, 'Carbohydrates'), servingGrams),
+                            fat: toPer100g(getNutrient(nutrients, 'Fat'), servingGrams),
+                            sugar: toPer100g(getNutrient(nutrients, 'Sugar'), servingGrams),
+                            sodium: toPer100g(getNutrient(nutrients, 'Sodium'), servingGrams),
+                            servingGrams: servingGrams,
+                            source: 'Spoonacular'
+                        };
+                    });
+                })
+                .catch(error => {
+                    errors.push(error.message);
+                    return [];
+                });
+        }
+
+        function doSearch() {
+            const query = searchInput.value.trim();
+
+            if (query === '') {
+                dataDisplay.textContent = 'Please enter a food name.';
+                return;
+            }
+
+            dataDisplay.textContent = '...';
+            suggestionsDisplay.textContent = '';
+
+            let allFoods = [];
+            let errors = [];
+
+            getOpenFoodFacts(query, errors)
+                .then(list => {
+                    allFoods = allFoods.concat(list);
+                    return getSpoonacular(query, errors);
+                })
+                .then(list => {
+                    allFoods = allFoods.concat(list);
+                    currentFoods = allFoods;
+
+                    let errorText = '';
+                    if (errors.length > 0) {
+                        errorText = '<p class="error">' + errors.join(' | ') + '</p>';
+                    }
+
+                    if (allFoods.length === 0) {
+                        dataDisplay.innerHTML = '<p class="error">No results found.</p>' + errorText;
+                        return;
+                    }
+
+                    dataDisplay.innerHTML = currentFoods.map((f, i) => `
+                        <div class="card">
+                            <h3 style="margin-top:0; color: #5c4033;">${f.name}</h3>
+                            <p>Calories: ${f.kcal !== null ? f.kcal + ' kcal / 100g' : 'No data'}</p>
+                            <p>Protein: ${formatValue(f.protein, 'g')}</p>
+                            <p>Carbohydrates: ${formatValue(f.carbs, 'g')}</p>
+                            <p>Fat: ${formatValue(f.fat, 'g')}</p>
+                            <p>Sugar: ${formatValue(f.sugar, 'g')}</p>
+                            <p>Sodium: ${formatValue(f.sodium, 'mg', 0)}</p>
+                            <p>
+                                <label>Grams eaten:</label>
+                                <input type="number" id="amount-${i}" min="1" max="5000" step="1" style="width: 90px;">
+                                <button class="add-button" data-index="${i}">Add to Diary</button>
+                            </p>
+                            <p id="result-${i}"></p>
+                            <small style="color: #8c7368;">Source: ${f.source}${f.servingGrams ? ' (converted from 1 serving = ' + f.servingGrams + ' g)' : ''}</small>
+                        </div>
+                    `).join('') + errorText;
+
+                    const buttons = document.querySelectorAll('.add-button');
+                    for (let i = 0; i < buttons.length; i++) {
+                        buttons[i].addEventListener('click', function () {
+                            addToDiary(this.dataset.index);
+                        });
+                    }
+                });
+        }
+
+        function addToDiary(i) {
+            const food = currentFoods[i];
+            const grams = parseFloat(document.getElementById('amount-' + i).value);
+            const resultBox = document.getElementById('result-' + i);
+
+            if (isNaN(grams) || grams <= 0 || grams > 5000) {
+                resultBox.className = 'error';
+                resultBox.textContent = 'Enter grams between 1 and 5000.';
+                return;
+            }
+
+            if (food.kcal === null) {
+                resultBox.className = 'error';
+                resultBox.textContent = 'No calorie data for this food.';
+                return;
+            }
+
+            const kcal = Math.round((food.kcal / 100) * grams);
+
+            let protein = 0;
+            if (food.protein !== null) {
+                protein = Math.round((food.protein / 100) * grams * 10) / 10;
+            }
+
+            let records = JSON.parse(localStorage.getItem('foodIntakes')) || [];
+            records.push({ name: food.name, kcal: kcal, protein: protein });
+            localStorage.setItem('foodIntakes', JSON.stringify(records));
+
+            resultBox.className = 'success';
+            resultBox.textContent = grams + ' g = ' + kcal + ' kcal. Successfully added.!';
+        }
+
+        suggestButton.addEventListener('click', () => {
+            const selectedDiet = selectDiet.value;
+
+            if (selectedDiet === '') {
+                suggestionsDisplay.textContent = 'Please select a diet type first.';
+                return;
+            }
+
+            if (currentFoods.length === 0) {
+                suggestionsDisplay.textContent = 'Please search for some foods first!';
+                return;
+            }
+
+            const recommended = suggestFoods(currentFoods, selectedDiet);
+            const dietName = selectDiet.options[selectDiet.selectedIndex].text;
+
+            if (recommended.length === 0) {
+                suggestionsDisplay.innerHTML = '<p>No food matches <b>' + dietName + '</b> from your current search. Try again.</p>';
+                return;
+            }
+
+            let savedFoods = [];
+            for (let i = 0; i < recommended.length; i++) {
+                savedFoods.push({ name: recommended[i].name, kcal: recommended[i].kcal });
+            }
+
+            localStorage.setItem('savedSuggestions', JSON.stringify({ diet: dietName, foods: savedFoods }));
+
+            suggestionsDisplay.innerHTML = `<h3 style="color: #5c4033;">Recommended for ${dietName}:</h3>` + recommended.map(f => `
+                <div class="card">
+                    <strong>${f.name}</strong>
+                    <br><small style="color: #8c7368;">Protein: ${formatValue(f.protein, 'g')} | Carbs: ${formatValue(f.carbs, 'g')} | Fat: ${formatValue(f.fat, 'g')} (per 100 g, ${f.source})</small>
+                </div>
+            `).join('');
+        });
+
+        searchButton.addEventListener('click', doSearch);
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                doSearch();
+            }
+        });
+    </script>
+</body>
+</html>
